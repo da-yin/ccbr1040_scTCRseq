@@ -14,6 +14,28 @@ Aim:
 Beta5t expressed by cTECs is critical for the development of CD8 T cells. We aim to understand how TCR repertoire is formed during thymocyte development in b5t-knockout and control mice.
 
 
+The different stages of single cells from this project range from early progenitor (Double positive (DP: CD8+/CD4+) cells) which are non-selected, and then progress gradually to become fully selected, mature CD8+ T cells.  Mutation of the PSMB11 gene (aka BETA5T) which is part of the proteasome and is exclusively expressed in cTEC (cortical Thymic Epithelial cells), and is the subunit that catalyzes cleavage of peptides which are presented by the MHC molecules to cells in the immune system (double positive cells) and is important for development of CD8+ T cells.  Along with TCR signal, there’s an upregulation of CD69 (stage 2).  It’s thought that the mutation in the proteosomal protein may change the nature of cleavage of peptides that are presented and may either make TCR’s less selected or make fewer CD8+ cells.  What initial evidence indicate is that there may be similar numbers of TCR’s between WT and KO but that there are differences in TCR types (less selected?) across WT and KO animals. The question to address with his TCR-Seq analysis centers on the clonality of TCR sequences that emerge from different stages of development along with the differences in WT (heterozygous) vs KO (mutant) mice. 
+
+
+Cell hashing:
+ 
+HTO001 – CD69low CCR7 low (I) Double positive in the cortex of the Thymus (most immature, not all have T cell receptors)
+HTO002 – CD69hi CCR7 low (II) Double positive in the cortex of the Thymus (has received TCR stimulus)
+HTO004 – CD69hi CCR7hi (IV) CD8 single positive in the medulla of the Thymus
+HTO005 – CD69low CCR7hi (V) CD8 single positive in the medulla of the Thymus (ready to leave Thymus “mature”)
+
+Stages:
+ 
+HT01: DP (CD8+/CD4+ stage 1, unsignaled) -> HT02: DP (CD8+/CD4+ stage 2, recognition of peptide) -> HT04: Stage 3 -> HT05: Stage 4 (CD8+, fully selected, medullary)  peripheral lymphoid organs (spleen, lymph nodes)
+ 
+Samples:
+ 
+1MF1 – sample set one HET mouse
+1MF2 – sample set one KO mouse
+2MF1 – sample set two HET mouse (poor hashing, low RNA reads, high mitochondrial content), excluded
+2MF2 – sample set two KO mouse (poor hashing, low RNA reads, high mitochondrial content), excluded
+3MF1 – sample set three HET mouse
+3MF2 – sample set three KO mouse
 
 
 ```{r setup, include=FALSE}
@@ -21,7 +43,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-suppressMessages(require(SingleCellExperiment))
+#suppressMessages(require(SingleCellExperiment))
 suppressMessages(require(Seurat))
 library(dplyr)
 library(ggplot2)
@@ -36,20 +58,200 @@ suppressMessages(require(SingleR))
 suppressMessages(require(cowplot))
 library(SingleR)
 library(Routliers)
-library("URD")
-library("DoubletFinder")
-library(scRNAseq)
-
+#library("URD")
+#library("DoubletFinder")
+#library(scRNAseq)
+library(here)
+library(harmony)
+library(batchelor)
+library(devtools)
+library(SeuratWrappers)
 theme_set(theme_classic())
 ```
 
 
 ```{r}
 setwd("~/Desktop/active_projects/ccbr1040_scTCRseq/analysis/")
-so = readRDS("~/Desktop/active_projects/ccbr1040_scTCRseq/rawData/RObjectdata.rds")
+so = readRDS("~/Desktop/active_projects/seuratObject/ccbr1040_RObjectdata_noDoublet.rds")
+
+so@meta.data$batch = ifelse(so@meta.data$sample_name=="1MF1", "one",
+                            ifelse(so@meta.data$sample_name=="1MF2", "one",
+                                   ifelse(so@meta.data$sample_name=="3MF1", "three","three")))
+so@meta.data$batch = as.factor(so@meta.data$batch)
+```
+
+#### SCTransform workflow
+```{r}
+so.list <- SplitObject(so, split.by = "batch")
+so.list <- so.list[c("one","three")]
+
+for (i in 1:length(so.list)) {
+    so.list[[i]] <- SCTransform(so.list[[i]], verbose = FALSE)
+}
+```
+
+```{r}
+options(future.globals.maxSize= 8912896000)
+so.features <- SelectIntegrationFeatures(object.list = so.list, nfeatures = 3000)
+so.list <- PrepSCTIntegration(object.list = so.list, anchor.features = so.features, 
+    verbose = FALSE)
+```
+
+```{r}
+so.anchors <- FindIntegrationAnchors(object.list = so.list, normalization.method = "SCT", 
+    anchor.features = so.features, verbose = FALSE)
+so.integrated <- IntegrateData(anchorset = so.anchors, normalization.method = "SCT", 
+    verbose = FALSE)
+```
+```{r}
+DefaultAssay(object = so.integrated) <- "integrated"
+varGenes_batch = VariableFeatures(so.integrated)[VariableFeatures(so.integrated) %in% rownames(urdObj@logupx.data)]
+```
+
+
+```{r}
+DefaultAssay(object = so.integrated) <- "integrated"
+so.integrated <- RunPCA(so.integrated, verbose = FALSE)
+
+so.integrated <- FindNeighbors(so.integrated,dims = 1:30)
+so.integrated <- FindClusters(so.integrated, reduction = "pca", dims = 1:30,resolution = 0.6,algorithm =3)
+
+so.integrated <- RunTSNE(so.integrated, dims = 1:30)
+DefaultAssay(so.integrated) = "SCT"
+DefaultAssay(so.integrated)
+DimPlot(so.integrated, reduction = "tsne", group.by = "hash.ID")
+```
+
+
+#### standard workflow for integration
+```{r}
+so.list <- SplitObject(so, split.by = "batch")
+
+
+for (i in 1:length(so.list)) {
+    so.list[[i]] <- NormalizeData(so.list[[i]], verbose = FALSE)
+    so.list[[i]] <- FindVariableFeatures(so.list[[i]], selection.method = "vst", 
+        nfeatures = 2000, verbose = FALSE)
+}
+
+reference.list <- so.list[c("one","three")]
+so.anchors <- FindIntegrationAnchors(object.list = reference.list, dims = 1:30)
+
+so.integrated <- IntegrateData(anchorset = so.anchors, dims = 1:30)
+
+DefaultAssay(so.integrated) <- "integrated"
+
+so.integrated <- ScaleData(so.integrated, verbose = FALSE)
+so.integrated <- RunPCA(so.integrated, npcs = 30, verbose = FALSE)
+so.integrated <- RunTSNE(so.integrated, reduction = "pca", dims = 1:30)
+
+DimPlot(so.integrated, reduction = "tsne", group.by = "sample_name")
 
 
 ```
+
+
+#### modified standard workflow for integration
+```{r}
+so.list <- SplitObject(so, split.by = "batch")
+for (i in names(so.list)) {
+    so.list[[i]] <- SCTransform(so.list[[i]], verbose = FALSE)
+}
+so.features <- SelectIntegrationFeatures(object.list = so.list, nfeatures = 3000)
+so.list <- PrepSCTIntegration(object.list = so.list, anchor.features = so.features)
+
+# This command returns dataset 5.  We can also specify multiple refs. (i.e. c(5,6))
+reference_dataset <- which(names(so.list) == "one")
+
+so.anchors <- FindIntegrationAnchors(object.list = so.list, normalization.method = "SCT", 
+    anchor.features = so.features, reference = reference_dataset)
+so.integrated <- IntegrateData(anchorset = so.anchors, normalization.method = "SCT")
+
+so.integrated <- RunPCA(object = so.integrated, verbose = FALSE)
+so.integrated <- RunTSNE(object = so.integrated, dims = 1:30)
+
+DimPlot(so.integrated, reduction = "tsne", group.by = "sample_name")
+
+
+```
+
+```{r}
+so.integrated@meta.data$new_name = ifelse(so.integrated@meta.data$sample_name=="1MF1", "het_1MF1",
+                               ifelse(so.integrated@meta.data$sample_name=="3MF1", "het_3MF1",
+                                      ifelse(so.integrated@meta.data$sample_name=="1MF2", "ko_1MF2", "ko_3MF2")))
+
+
+so.integrated@meta.data$new_name = paste0(so.integrated@meta.data$new_name, "_", so.integrated@meta.data$hash.ID)
+so.integrated@meta.data$new_name = gsub("mHTO0", "", so.integrated@meta.data$new_name)
+
+my_levels <- c("het_1MF1_1", "het_3MF1_1", "ko_1MF2_1", "ko_3MF2_1",
+               "het_1MF1_2", "het_3MF1_2", "ko_1MF2_2", "ko_3MF2_2",
+               "het_1MF1_4", "het_3MF1_4", "ko_1MF2_4", "ko_3MF2_4",
+               "het_1MF1_5", "het_3MF1_5", "ko_1MF2_5", "ko_3MF2_5")
+
+so.integrated@meta.data$new_name = factor(x = so.integrated@meta.data$new_name, levels = my_levels)
+
+Idents(so.integrated) = "new_name"
+so_ave = AverageExpression(object = so.integrated, assays = "integrated")
+
+DefaultAssay(so.integrated)
+length(rownames(so.integrated))
+
+VlnPlot(so.integrated, features = c("Cd8a","Cd4","Cd5"), pt.size = 0.001, assay = "RNA")+NoLegend()
+
+```
+
+
+
+
+```{r}
+so@meta.data$new_name = ifelse(so@meta.data$sample_name=="1MF1", "het_1MF1",
+                               ifelse(so@meta.data$sample_name=="3MF1", "het_3MF1",
+                                      ifelse(so@meta.data$sample_name=="1MF2", "ko_1MF2", "ko_3MF2")))
+
+
+so@meta.data$new_name = paste0(so@meta.data$new_name, "_", so@meta.data$hash.ID)
+so@meta.data$new_name = gsub("mHTO0", "", so@meta.data$new_name)
+
+my_levels <- c("het_1MF1_1", "het_3MF1_1", "ko_1MF2_1", "ko_3MF2_1",
+               "het_1MF1_2", "het_3MF1_2", "ko_1MF2_2", "ko_3MF2_2",
+               "het_1MF1_4", "het_3MF1_4", "ko_1MF2_4", "ko_3MF2_4",
+               "het_1MF1_5", "het_3MF1_5", "ko_1MF2_5", "ko_3MF2_5")
+
+so@meta.data$new_name = factor(x = so@meta.data$new_name, levels = my_levels)
+
+
+```
+
+
+
+```{r}
+DefaultAssay(so) = "RNA"
+so <- SCTransform(so)
+so <- RunFastMNN(object.list = SplitObject(so, split.by = "batch"))
+# so <- RunUMAP(so, reduction = "mnn", dims = 1:30)
+# so <- FindNeighbors(so, reduction = "mnn", dims = 1:30)
+# so <- FindClusters(so)
+so <- RunTSNE(so, reduction = "mnn", dims = 1:30)
+so <- FindNeighbors(so, reduction = "mnn", dims = 1:30)
+so <- FindClusters(so)
+
+
+
+
+DimPlot(so, group.by = "sample_name")
+```
+
+```{r}
+ElbowPlot(so)
+npcs = 15
+so= RunUMAP(so, dims = 1:npcs)  %>% FindNeighbors() %>% FindClusters(algorithm=3,resolution=0.6)
+
+so@meta.data
+DimPlot(so, group.by = c("sample_name", "hash.ID"), reduction = "tsne")
+DefaultAssay(so2)
+```
+
 
 #### Added TCR data to the metadata and removed doublet (hash.ID) and saved new RObjectdata_noDoublet.rds
 ```{r}
@@ -103,9 +305,143 @@ DimPlot(so,reduction = "tsne")
 
 
 FeaturePlot(so, features = c("Cd69"),reduction = "tsne")
+so@meta.data 
+VlnPlot(so, features = c("Cd69", "Cd4", "Cd8a", "Cd28"), pt.size = 0.01, split.by = "hash.ID" )
+
+
+VlnPlot(so, features = c("Cd8a"), pt.size = 0.01, split.by = "hash.ID", group.by = "" )
+
+so@meta.data
+
+het = so@meta.data[which(so@meta.data$sample_name%in%c("1MF1","3MF1")),]
+het = het[-which(is.na(het$cell_TRAV)),]
+ko = so@meta.data[which(so@meta.data$sample_name%in%c("1MF2","3MF2")),]
+
+
+
+
+
+genes_of_interest = read.csv("processedData/genes_of_interest.csv", header = T, stringsAsFactors = F)
+TCR_components = genes_of_interest[which(genes_of_interest$type=="TCR_components"), c("gene")]
+
+Idents(so)= "new_name"
+
+DefaultAssay(so) = "SCT"
+Idents(so) = "new_name"
+so_ave = AverageExpression(object = so)
+
+# normal seurat transformation and dimension reduction
+so = SCTransform(so) %>% RunPCA() 
+ElbowPlot(so)
+npcs = 15
+so= RunUMAP(so, dims = 1:npcs)  %>% FindNeighbors() %>% FindClusters(algorithm=3,resolution=0.6)
+
+# Harmony transformation and dimension reduction with batch correction
+so_harmony = SCTransform(so) %>% RunHarmony(so)
+ElbowPlot(so)
+npcs = 15
+so= RunUMAP(so, dims = 1:npcs)  %>% FindNeighbors() %>% FindClusters(algorithm=3,resolution=0.6)
+
+
+
+FeaturePlot(so, features = "Cd4", reduction = "tsne")
+
+saveRDS(object = so, file = "../../seuratObject/ccbr1040_noDoublet_reshape.5.15.2020.rds")
+```
+
+
+```{r}
+VlnPlot(so, features = c("Cd8a","Cd4","Cd5"), pt.size = 0.001)+NoLegend()
+
+
+mySeuratPlot = function(genes){
+  
+  name = deparse(substitute(genes))
+  p1 = VlnPlot(so, features = genes, pt.size = 0.001)+NoLegend()
+  pdf(paste0("VlnPlot_", name, ".pdf"), width = 14, height = 14)
+  print(p1)
+  dev.off()
+  
+  p2 = FeaturePlot(so, features = genes, reduction = "tsne")
+  pdf(paste0("FeaturePlot_", name, ".pdf"), width = 14, height = 14)
+  print(p2)
+  dev.off()
+  
+  mat = so_ave$SCT[which(rownames(so_ave$SCT)%in%genes),]
+  
+  p3 = 
+  ComplexHeatmap::Heatmap(matrix = t(scale(t(data.matrix(mat)))), name="Z-score", km=1, 
+                        col=colorRampPalette(c("darkblue","grey","darkred"))(256), 
+                        row_names_gp = gpar(fontsize = ifelse(nrow(mat) <= 30, 10, 
+                                                       ifelse(30<nrow(mat)&nrow(mat) <= 45, 7,
+                                                       ifelse(45<nrow(mat)&nrow(mat) <= 60, 5, 4))), 
+                                            fontface = "bold"),
+                        column_names_gp = gpar(fontsize = 10, fontface = "bold"),
+                        cluster_columns = T ,column_title_gp = gpar(fontsize = 10, fontface = "bold"), 
+                        column_names_rot = 65, width = unit(5, "cm"),
+                        column_title = name)
+  
+  pdf(paste0("Heatmap_", name, ".pdf"), width = 10, height = 10)
+  print(p3)
+  dev.off()
+  
+}
+
+TCR_components = genes_of_interest[which(genes_of_interest$type=="TCR_components"), c("gene")]
+CoReceptors_CoSignalingMolecules = genes_of_interest[which(genes_of_interest$type=="CoReceptors_CoSignalingMolecules"), c("gene")]
+cytokineReceptors_chemokineReceptors = genes_of_interest[which(genes_of_interest$type=="cytokineReceptors_chemokineReceptors"), c("gene")]
+adhesionMolecules_guidanceMolecules = genes_of_interest[which(genes_of_interest$type=="adhesionMolecules_guidanceMolecules"), c("gene")]
+otherSurfaceMolecules = genes_of_interest[which(genes_of_interest$type=="otherSurfaceMolecules"), c("gene")]
+signalMolecules = genes_of_interest[which(genes_of_interest$type=="signalMolecules"), c("gene")]
+transcriptionFactors = genes_of_interest[which(genes_of_interest$type=="transcriptionFactors"), c("gene")]
+otherMolecules = genes_of_interest[which(genes_of_interest$type=="otherMolecules"), c("gene")]
+
+
+
+
+
+for (i in unique(genes_of_interest$type)){
+  myGenes = genes_of_interest[which(genes_of_interest$type==i), c("gene")]
+}
+
+mySeuratPlot(genes = TCR_components)
+mySeuratPlot(genes = CoReceptors_CoSignalingMolecules)
+mySeuratPlot(genes = cytokineReceptors_chemokineReceptors)
+mySeuratPlot(genes = adhesionMolecules_guidanceMolecules)
+mySeuratPlot(genes = otherSurfaceMolecules)
+mySeuratPlot(genes = signalMolecules)
+mySeuratPlot(genes = transcriptionFactors)
+mySeuratPlot(genes = otherMolecules)
+
+
+
+so_ave$integrated
+  
+  var_genes  = apply(so_ave$integrated, 1, var)
+  select_var <- names(sort(var_genes, decreasing=TRUE))[1:800]
+  so_ave_select = so_ave$integrated[select_var,]
+  
+  mat = so_ave_select
+  
+  p3 = 
+  ComplexHeatmap::Heatmap(matrix = t(scale(t(data.matrix(mat)))), name="Z-score", km=1, 
+                        col=colorRampPalette(c("darkblue","grey","darkred"))(256), 
+                        row_names_gp = gpar(fontsize = ifelse(nrow(mat) <= 30, 10, 
+                                                       ifelse(30<nrow(mat)&nrow(mat) <= 45, 7,
+                                                       ifelse(45<nrow(mat)&nrow(mat) <= 60, 5, 4))), 
+                                            fontface = "bold"),
+                        column_names_gp = gpar(fontsize = 10, fontface = "bold"),
+                        cluster_columns = T ,column_title_gp = gpar(fontsize = 10, fontface = "bold"), 
+                        column_names_rot = 65, width = unit(8, "cm"),
+                        column_title = "")
 
 ```
 
+```{r}
+DimPlot(so, reduction = "tsne", group.by = "sample_name")
+
+so@meta.data
+```
 
 
 ```{r}
