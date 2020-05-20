@@ -69,16 +69,114 @@ library(SeuratWrappers)
 theme_set(theme_classic())
 ```
 
+```{r}
+library(SeuratData)
+
+InstallData("ifnb")
+data("ifnb")
+
+rownames(ifnb) %>% length()
+
+
+ifnb.list <- SplitObject(ifnb, split.by = "stim")
+
+ifnb.list <- lapply(X = ifnb.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+immune.anchors <- FindIntegrationAnchors(object.list = ifnb.list, dims = 1:20)
+
+immune.combined <- IntegrateData(anchorset = immune.anchors, dims = 1:20)
+
+DefaultAssay(immune.combined) <- "integrated"
+
+immune.combined <- ScaleData(immune.combined, verbose = FALSE)
+immune.combined <- RunPCA(immune.combined, npcs = 30, verbose = FALSE)
+
+immune.combined <- RunUMAP(immune.combined, reduction = "pca", dims = 1:20)
+immune.combined <- FindNeighbors(immune.combined, reduction = "pca", dims = 1:20)
+immune.combined <- FindClusters(immune.combined, resolution = 0.5)
+
+
+immune.combined
+
+DimPlot(immune.combined, reduction = "umap", group.by = "stim")
+```
+
+
 
 ```{r}
 setwd("~/Desktop/active_projects/ccbr1040_scTCRseq/analysis/")
+so = readRDS("~/Desktop/active_projects/seuratObject/ccbr1040_noDoublet_batchCorrected.5.18.2020.rds")
 so = readRDS("~/Desktop/active_projects/seuratObject/ccbr1040_RObjectdata_noDoublet.rds")
+so_FastMNN = readRDS("~/Desktop/active_projects/seuratObject/ccbr1040_RObjectdata_noDoublet.rds")
+
 
 so@meta.data$batch = ifelse(so@meta.data$sample_name=="1MF1", "one",
                             ifelse(so@meta.data$sample_name=="1MF2", "one",
                                    ifelse(so@meta.data$sample_name=="3MF1", "three","three")))
 so@meta.data$batch = as.factor(so@meta.data$batch)
+
+so_raw@meta.data$batch = ifelse(so_raw@meta.data$sample_name=="1MF1", "one",
+                            ifelse(so_raw@meta.data$sample_name=="1MF2", "one",
+                                   ifelse(so_raw@meta.data$sample_name=="3MF1", "three","three")))
+so_raw@meta.data$batch = as.factor(so_raw@meta.data$batch)
+
+so_FastMNN
+
+DimPlot(object = so_FastMNN, reduction = "tsne", pt.size = .1, group.by = "sample_name")
+VlnPlot(object = so_FastMNN, features = "PC_1", group.by = "sample_name", pt.size = .1)
+
 ```
+#### run fastMN for integrate out the batch
+
+```{r}
+so_FastMNN <- NormalizeData(so_raw)
+so_FastMNN <- FindVariableFeatures(so_FastMNN)
+so_FastMNN <- RunFastMNN(object.list = SplitObject(so_FastMNN, split.by = "batch"))
+so_FastMNN <- RunTSNE(so_FastMNN, reduction = "mnn", dims = 1:30)
+so_FastMNN <- FindNeighbors(so_FastMNN, reduction = "mnn", dims = 1:30)
+so_FastMNN <- FindClusters(so_FastMNN)
+
+DimPlot(so_FastMNN, reduction = "tsne", group.by = "sample_name")
+
+```
+
+
+
+
+#### run harmony for integrate out the batch
+```{r}
+options(repr.plot.height = 2.5, repr.plot.width = 6)
+so = so %>% RunHarmony("batch", plot_convergence = TRUE)
+
+harmony_embeddings <- Embeddings(so, 'harmony')
+harmony_embeddings[1:5, 1:5]
+so
+
+DimPlot(object = so, reduction = "harmony", pt.size = .1, group.by = "sample_name")
+VlnPlot(object = so, features = "harmony_1", group.by = "sample_name", pt.size = .1)
+```
+
+```{r}
+so <- so %>% 
+    RunTSNE(reduction = "harmony", dims = 1:10) %>% 
+    FindNeighbors(reduction = "harmony", dims = 1:10) %>% 
+    FindClusters(resolution = 0.5) %>% 
+    identity()
+```
+
+```{r}
+DimPlot(so, reduction = "tsne", group.by = "sample_name", pt.size = .1)
+DefaultAssay(so)
+
+```
+
+```{r}
+so
+```
+
 
 #### SCTransform workflow
 ```{r}
@@ -106,6 +204,9 @@ so.integrated <- IntegrateData(anchorset = so.anchors, normalization.method = "S
 ```{r}
 DefaultAssay(object = so.integrated) <- "integrated"
 varGenes_batch = VariableFeatures(so.integrated)[VariableFeatures(so.integrated) %in% rownames(urdObj@logupx.data)]
+length(rownames(so))
+
+DimPlot(so, reduction = "tsne", group.by = "sample_name")
 ```
 
 
@@ -131,7 +232,7 @@ so.list <- SplitObject(so, split.by = "batch")
 for (i in 1:length(so.list)) {
     so.list[[i]] <- NormalizeData(so.list[[i]], verbose = FALSE)
     so.list[[i]] <- FindVariableFeatures(so.list[[i]], selection.method = "vst", 
-        nfeatures = 2000, verbose = FALSE)
+        nfeatures = 10000, verbose = FALSE)
 }
 
 reference.list <- so.list[c("one","three")]
@@ -148,63 +249,17 @@ so.integrated <- RunTSNE(so.integrated, reduction = "pca", dims = 1:30)
 DimPlot(so.integrated, reduction = "tsne", group.by = "sample_name")
 
 
+rownames(so.integrated) %>% length()
+
+
+
+saveRDS(object = so.integrated, file = "~/Desktop/active_projects/seuratObject/ccbr1040_noDoublet_batchCorrected.5.18.2020.rds")
 ```
 
 
-#### modified standard workflow for integration
 ```{r}
-so.list <- SplitObject(so, split.by = "batch")
-for (i in names(so.list)) {
-    so.list[[i]] <- SCTransform(so.list[[i]], verbose = FALSE)
-}
-so.features <- SelectIntegrationFeatures(object.list = so.list, nfeatures = 3000)
-so.list <- PrepSCTIntegration(object.list = so.list, anchor.features = so.features)
-
-# This command returns dataset 5.  We can also specify multiple refs. (i.e. c(5,6))
-reference_dataset <- which(names(so.list) == "one")
-
-so.anchors <- FindIntegrationAnchors(object.list = so.list, normalization.method = "SCT", 
-    anchor.features = so.features, reference = reference_dataset)
-so.integrated <- IntegrateData(anchorset = so.anchors, normalization.method = "SCT")
-
-so.integrated <- RunPCA(object = so.integrated, verbose = FALSE)
-so.integrated <- RunTSNE(object = so.integrated, dims = 1:30)
-
-DimPlot(so.integrated, reduction = "tsne", group.by = "sample_name")
 
 
-```
-
-```{r}
-so.integrated@meta.data$new_name = ifelse(so.integrated@meta.data$sample_name=="1MF1", "het_1MF1",
-                               ifelse(so.integrated@meta.data$sample_name=="3MF1", "het_3MF1",
-                                      ifelse(so.integrated@meta.data$sample_name=="1MF2", "ko_1MF2", "ko_3MF2")))
-
-
-so.integrated@meta.data$new_name = paste0(so.integrated@meta.data$new_name, "_", so.integrated@meta.data$hash.ID)
-so.integrated@meta.data$new_name = gsub("mHTO0", "", so.integrated@meta.data$new_name)
-
-my_levels <- c("het_1MF1_1", "het_3MF1_1", "ko_1MF2_1", "ko_3MF2_1",
-               "het_1MF1_2", "het_3MF1_2", "ko_1MF2_2", "ko_3MF2_2",
-               "het_1MF1_4", "het_3MF1_4", "ko_1MF2_4", "ko_3MF2_4",
-               "het_1MF1_5", "het_3MF1_5", "ko_1MF2_5", "ko_3MF2_5")
-
-so.integrated@meta.data$new_name = factor(x = so.integrated@meta.data$new_name, levels = my_levels)
-
-Idents(so.integrated) = "new_name"
-so_ave = AverageExpression(object = so.integrated, assays = "integrated")
-
-DefaultAssay(so.integrated)
-length(rownames(so.integrated))
-
-VlnPlot(so.integrated, features = c("Cd8a","Cd4","Cd5"), pt.size = 0.001, assay = "RNA")+NoLegend()
-
-```
-
-
-
-
-```{r}
 so@meta.data$new_name = ifelse(so@meta.data$sample_name=="1MF1", "het_1MF1",
                                ifelse(so@meta.data$sample_name=="3MF1", "het_3MF1",
                                       ifelse(so@meta.data$sample_name=="1MF2", "ko_1MF2", "ko_3MF2")))
@@ -219,6 +274,25 @@ my_levels <- c("het_1MF1_1", "het_3MF1_1", "ko_1MF2_1", "ko_3MF2_1",
                "het_1MF1_5", "het_3MF1_5", "ko_1MF2_5", "ko_3MF2_5")
 
 so@meta.data$new_name = factor(x = so@meta.data$new_name, levels = my_levels)
+
+
+
+
+so_FastMNN@meta.data$new_name = ifelse(so_FastMNN@meta.data$sample_name=="1MF1", "het_1MF1",
+                               ifelse(so_FastMNN@meta.data$sample_name=="3MF1", "het_3MF1",
+                                      ifelse(so_FastMNN@meta.data$sample_name=="1MF2", "ko_1MF2", "ko_3MF2")))
+
+
+so_FastMNN@meta.data$new_name = paste0(so_FastMNN@meta.data$new_name, "_", so_FastMNN@meta.data$hash.ID)
+so_FastMNN@meta.data$new_name = gsub("mHTO0", "", so_FastMNN@meta.data$new_name)
+
+my_levels <- c("het_1MF1_1", "het_3MF1_1", "ko_1MF2_1", "ko_3MF2_1",
+               "het_1MF1_2", "het_3MF1_2", "ko_1MF2_2", "ko_3MF2_2",
+               "het_1MF1_4", "het_3MF1_4", "ko_1MF2_4", "ko_3MF2_4",
+               "het_1MF1_5", "het_3MF1_5", "ko_1MF2_5", "ko_3MF2_5")
+
+so_FastMNN@meta.data$new_name = factor(x = so_FastMNN@meta.data$new_name, levels = my_levels)
+
 
 
 ```
@@ -238,20 +312,11 @@ so <- FindClusters(so)
 
 
 
-
+DefaultAssay(so) = "integrated"
 DimPlot(so, group.by = "sample_name")
+Idents(so)= "new_name"
+VlnPlot(so, features = "Cd69")
 ```
-
-```{r}
-ElbowPlot(so)
-npcs = 15
-so= RunUMAP(so, dims = 1:npcs)  %>% FindNeighbors() %>% FindClusters(algorithm=3,resolution=0.6)
-
-so@meta.data
-DimPlot(so, group.by = c("sample_name", "hash.ID"), reduction = "tsne")
-DefaultAssay(so2)
-```
-
 
 #### Added TCR data to the metadata and removed doublet (hash.ID) and saved new RObjectdata_noDoublet.rds
 ```{r}
@@ -351,9 +416,23 @@ saveRDS(object = so, file = "../../seuratObject/ccbr1040_noDoublet_reshape.5.15.
 
 
 ```{r}
-VlnPlot(so, features = c("Cd8a","Cd4","Cd5"), pt.size = 0.001)+NoLegend()
+genes_of_interest = read.csv("results/processedData/genes_of_interest.csv", header = T, stringsAsFactors = F)
+
+DefaultAssay(so_FastMNN) = "RNA"
+Idents(so_FastMNN) = "new_name"
+so_ave = AverageExpression(object = so_FastMNN)
+
+VlnPlot(so, features = c("Cd8a","Cd4","Cd5","Bax","H2-Q6","Bak1"), pt.size = 0.001)+NoLegend()
+
+genes_of_interest$in_dataset = ifelse(genes_of_interest$gene%in%rownames(so), "yes", "no")
+
+write.csv(genes_of_interest,"results/processedData/genes_of_interest.csv", quote = F, row.names = F)
+
+```
 
 
+
+```{r}
 mySeuratPlot = function(genes){
   
   name = deparse(substitute(genes))
@@ -367,7 +446,7 @@ mySeuratPlot = function(genes){
   print(p2)
   dev.off()
   
-  mat = so_ave$SCT[which(rownames(so_ave$SCT)%in%genes),]
+  mat = so_ave$RNA[which(rownames(so_ave$RNA)%in%genes),]
   
   p3 = 
   ComplexHeatmap::Heatmap(matrix = t(scale(t(data.matrix(mat)))), name="Z-score", km=1, 
@@ -378,7 +457,7 @@ mySeuratPlot = function(genes){
                                             fontface = "bold"),
                         column_names_gp = gpar(fontsize = 10, fontface = "bold"),
                         cluster_columns = T ,column_title_gp = gpar(fontsize = 10, fontface = "bold"), 
-                        column_names_rot = 65, width = unit(5, "cm"),
+                        column_names_rot = 65, width = unit(8, "cm"),
                         column_title = name)
   
   pdf(paste0("Heatmap_", name, ".pdf"), width = 10, height = 10)
@@ -415,11 +494,10 @@ mySeuratPlot(genes = otherMolecules)
 
 
 
-so_ave$integrated
-  
-  var_genes  = apply(so_ave$integrated, 1, var)
-  select_var <- names(sort(var_genes, decreasing=TRUE))[1:800]
-  so_ave_select = so_ave$integrated[select_var,]
+
+  var_genes  = apply(so_ave$RNA, 1, var)
+  select_var <- names(sort(var_genes, decreasing=TRUE))[1:500]
+  so_ave_select = so_ave$RNA[select_var,]
   
   mat = so_ave_select
   
@@ -432,7 +510,7 @@ so_ave$integrated
                                             fontface = "bold"),
                         column_names_gp = gpar(fontsize = 10, fontface = "bold"),
                         cluster_columns = T ,column_title_gp = gpar(fontsize = 10, fontface = "bold"), 
-                        column_names_rot = 65, width = unit(8, "cm"),
+                        column_names_rot = 65, width = unit(10, "cm"),
                         column_title = "")
 
 ```
