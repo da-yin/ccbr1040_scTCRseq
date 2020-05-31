@@ -1,0 +1,85 @@
+---
+title: "ccbr1040_mRNA"
+author: "Da"
+date: "5/31/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#suppressMessages(require(SingleCellExperiment))
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(tidyverse)
+library(Matrix)
+library(SingleR)
+library(cowplot)
+library(SingleR)
+library(Routliers)
+#library("URD")
+#library("DoubletFinder")
+#library(scRNAseq)
+library(here)
+library(harmony)
+library(batchelor)
+library(devtools)
+library(SeuratWrappers)
+theme_set(theme_classic())
+```
+
+#### subset singlet and SCTransform
+```{r}
+setwd("~/Desktop/active_projects/ccbr1040_scTCRseq/analysis/")
+
+so = readRDS("~/Desktop/ccbr1040_scTCRseq/rawData/RObjectdata.rds") 
+# RObjectdata.rds downloaded from 
+# https://gypsum.palantircloud.com/workspace/vector/view/ri.vector.main.workbook.611480ac-354a-403e-8284-6c080bb2c135?branch=maggie
+so = subset(so, cells=which(so$hash.ID!="Doublet"&so$hash.ID!="Negative"))
+
+# soSubset = SCTransform(so) %>% RunPCA() 
+# 
+# # Use elbowPlot to find the number of PC to use for clustering
+# ElbowPlot(soSubset)
+# 
+# npcs = 15
+# soReshape= RunUMAP(soSubset, dims = 1:npcs)  %>% FindNeighbors() %>% FindClusters()
+# 
+DimPlot(so, reduction = "umap", group.by = "hash.ID")
+````
+
+### add new names to cells and save RDS
+```{r}
+table(soReshape@meta.data$hash.ID)
+soReshape@meta.data$batch = ifelse(soReshape@meta.data$sample_name=="1MF1", "one",
+                            ifelse(soReshape@meta.data$sample_name=="1MF2", "one",
+                                   ifelse(soReshape@meta.data$sample_name=="3MF1", "three","three")))
+soReshape@meta.data$batch = as.factor(soReshape@meta.data$batch)
+
+soReshape@meta.data$new_name = ifelse(soReshape@meta.data$sample_name=="1MF1", "het",
+                               ifelse(soReshape@meta.data$sample_name=="3MF1", "het",
+                                      ifelse(soReshape@meta.data$sample_name=="1MF2", "ko", "ko")))
+
+
+soReshape@meta.data$new_name = paste0(soReshape@meta.data$new_name, "_", soReshape@meta.data$hash.ID)
+soReshape@meta.data$new_name = gsub("mHTO0", "", soReshape@meta.data$new_name)
+
+
+my_levels <- c("het_1", "ko_1", "het_2", "ko_2", "het_4", "ko_4", "het_5", "ko_5")
+
+
+soReshape@meta.data$new_name = factor(x = soReshape@meta.data$new_name, levels = my_levels)
+
+DimPlot(soReshape, reduction = "tsne", group.by = "hash.ID")
+
+saveRDS(object = soReshape, file = "~/Desktop/active_projects/seuratObject/ccbr1040_noDoublet_soReshape.5.31.2020.rds")
+
+
+```
+

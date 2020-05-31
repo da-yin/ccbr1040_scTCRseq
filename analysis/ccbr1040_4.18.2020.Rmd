@@ -86,26 +86,74 @@ theme_set(theme_classic())
 #### read in Seurat object and add new metadata
 ```{r}
 setwd("~/Desktop/active_projects/ccbr1040_scTCRseq/analysis/")
-so = readRDS("~/Desktop/active_projects/seuratObject/ccbr1040_RObjectdata_noDoublet.rds")
+#so = readRDS("~/Desktop/active_projects/seuratObject/ccbr1040_RObjectdata_noDoublet.rds")
 
 so@meta.data$batch = ifelse(so@meta.data$sample_name=="1MF1", "one",
                             ifelse(so@meta.data$sample_name=="1MF2", "one",
                                    ifelse(so@meta.data$sample_name=="3MF1", "three","three")))
 so@meta.data$batch = as.factor(so@meta.data$batch)
 
-so@meta.data$new_name = ifelse(so@meta.data$sample_name=="1MF1", "het_1MF1",
-                               ifelse(so@meta.data$sample_name=="3MF1", "het_3MF1",
-                                      ifelse(so@meta.data$sample_name=="1MF2", "ko_1MF2", "ko_3MF2")))
+so@meta.data$new_name = ifelse(so@meta.data$sample_name=="1MF1", "het",
+                               ifelse(so@meta.data$sample_name=="3MF1", "het",
+                                      ifelse(so@meta.data$sample_name=="1MF2", "ko", "ko")))
+
+
+# so@meta.data$new_name = ifelse(so@meta.data$sample_name=="1MF1", "het_1MF1",
+#                                ifelse(so@meta.data$sample_name=="3MF1", "het_3MF1",
+#                                       ifelse(so@meta.data$sample_name=="1MF2", "ko_1MF2", "ko_3MF2")))
 
 so@meta.data$new_name = paste0(so@meta.data$new_name, "_", so@meta.data$hash.ID)
 so@meta.data$new_name = gsub("mHTO0", "", so@meta.data$new_name)
 
-my_levels <- c("het_1MF1_1", "het_3MF1_1", "ko_1MF2_1", "ko_3MF2_1",
-               "het_1MF1_2", "het_3MF1_2", "ko_1MF2_2", "ko_3MF2_2",
-               "het_1MF1_4", "het_3MF1_4", "ko_1MF2_4", "ko_3MF2_4",
-               "het_1MF1_5", "het_3MF1_5", "ko_1MF2_5", "ko_3MF2_5")
+
+# my_levels <- c("het_1MF1_1", "het_3MF1_1", "ko_1MF2_1", "ko_3MF2_1",
+#                "het_1MF1_2", "het_3MF1_2", "ko_1MF2_2", "ko_3MF2_2",
+#                "het_1MF1_4", "het_3MF1_4", "ko_1MF2_4", "ko_3MF2_4",
+#                "het_1MF1_5", "het_3MF1_5", "ko_1MF2_5", "ko_3MF2_5")
+
+my_levels <- c("het_1", "ko_1", "het_2", "ko_2", "het_4", "ko_4", "het_5", "ko_5")
+
 
 so@meta.data$new_name = factor(x = so@meta.data$new_name, levels = my_levels)
+
+DimPlot(so, reduction = "tsne", group.by = "hash.ID")
+
+pdf("DimPlot_umap.pdf")
+DimPlot(so, reduction = "umap", group.by = "hash.ID")
+dev.off()
+```
+
+```{r}
+so
+```
+
+
+```{r}
+table(so@meta.data$hash.ID)
+
+so = readRDS("~/Desktop/ccbr1040_scTCRseq/rawData/RObjectdata.rds") 
+# RObjectdata.rds downloaded from 
+# https://gypsum.palantircloud.com/workspace/vector/view/ri.vector.main.workbook.611480ac-354a-403e-8284-6c080bb2c135?branch=maggie
+so = subset(so, cells=which(so$hash.ID!="Doublet"&so$hash.ID!="Negative"))
+
+
+
+table(so@meta.data$hash.ID)
+
+
+DimPlot(so, reduction = "tsne", group.by = "hash.ID")
+DimPlot(so, reduction = "tsne", group.by = "orig.ident")
+
+
+DimPlot(so, reduction = "tsne", group.by = "orig.ident")
+
+table(so@meta.data$sample_name)
+
+
+```
+
+
+```{r}
 
 ```
 
@@ -170,7 +218,7 @@ so.list <- SplitObject(so, split.by = "batch")
 for (i in 1:length(so.list)) {
     so.list[[i]] <- NormalizeData(so.list[[i]], verbose = FALSE)
     so.list[[i]] <- FindVariableFeatures(so.list[[i]], selection.method = "vst", 
-        nfeatures = 10000, verbose = FALSE)
+        nfeatures = 2000, verbose = FALSE)
 }
 
 reference.list <- so.list[c("one","three")]
@@ -188,6 +236,21 @@ DimPlot(so.integrated, reduction = "tsne", group.by = "sample_name")
 DefaultAssay(so.integrated)
 
 saveRDS(object = so.integrated, file = "~/Desktop/active_projects/seuratObject/ccbr1040_noDoublet_SeuratStandardBatchCorrected.5.20.2020.rds")
+
+saveRDS(object = so.integrated, file = "~/Desktop/active_projects/seuratObject/ccbr1040_noDoublet_noTCR_SeuratStandardBatchCorrected.5.31.2020.rds")
+
+
+my_levels <- c("het_1", "ko_1", "het_2", "ko_2", "het_4", "ko_4", "het_5", "ko_5")
+
+
+so.integrated@meta.data$new_name = factor(x = so.integrated@meta.data$new_name, levels = my_levels)
+
+DefaultAssay(so.integrated) = "RNA"
+Idents(so.integrated) = "new_name"
+so_ave = AverageExpression(object = so.integrated)
+
+
+table(so.integrated@meta.data$new_name)
 ```
 
 #### Added TCR data to the metadata and removed doublet (hash.ID) and saved new RObjectdata_noDoublet.rds
@@ -273,6 +336,7 @@ write.csv(genes_of_interest,"results/processedData/genes_of_interest.csv", quote
 
 #### function to create gene expression visulization
 ```{r}
+genes_of_interest = read.csv("results/processedData/genes_of_interest.csv", header = T, stringsAsFactors = F)
 
 
 mySeuratPlot = function(genes){
@@ -313,6 +377,15 @@ mySeuratPlot = function(genes){
   print(p4)
   dev.off()
   
+  p5 = RidgePlot(so.integrated, features = genes)+NoLegend()
+  pdf(paste0("RidgePlot_", name, ".pdf"), width = 18, height = 14)
+  print(p5)
+  dev.off()  
+  
+  p6 = DoHeatmap(object = so.integrated, features = genes)
+  pdf(paste0("DoHeatmap_", name, ".pdf"))
+  print(p6)
+  dev.off() 
 }
 
 TCR_components = genes_of_interest[which(genes_of_interest$type=="TCR_components"), c("gene")]
@@ -330,8 +403,12 @@ for (i in unique(genes_of_interest$type)){
   myGenes = genes_of_interest[which(genes_of_interest$type==i), c("gene")]
 }
 
+DoHeatmap(so, features = "Cd5")
+
 mySeuratPlot(genes = TCR_components)
+
 mySeuratPlot(genes = CoReceptors_CoSignalingMolecules)
+
 mySeuratPlot(genes = cytokineReceptors_chemokineReceptors)
 mySeuratPlot(genes = adhesionMolecules_guidanceMolecules)
 mySeuratPlot(genes = otherSurfaceMolecules)
@@ -368,6 +445,10 @@ so_ave = AverageExpression(object = so.integrated)
   dev.off()
   
 
+```
+```{r}
+so
+so.integrated
 ```
 
 
