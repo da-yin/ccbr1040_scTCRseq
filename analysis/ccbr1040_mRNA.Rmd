@@ -38,12 +38,20 @@ theme_set(theme_classic())
 ```{r}
 setwd("~/Desktop/active_projects/ccbr1040_scTCRseq/analysis/")
 so = readRDS("~/Desktop/active_projects/seuratObject/ccbr1040_noDoublet_soReshape.5.31.2020.rds")
+
+so@meta.data$group = ifelse(so@meta.data$sample_name=="1MF1", "het",
+                               ifelse(so@meta.data$sample_name=="3MF1", "het",
+                                      ifelse(so@meta.data$sample_name=="1MF2", "ko", "ko")))
+
+
+
 ```
 
 
 ```{r}
 Idents(so) = "new_name"
 so_ave = AverageExpression(object = so, assays = "SCT")
+DefaultAssay(so)
 ```
 
 
@@ -61,8 +69,10 @@ mySeuratPlot = function(genes){
   print(p1)
   dev.off()
   
-  p2 = FeaturePlot(so, features = genes, reduction = "tsne")
-  pdf(paste0("FeaturePlot_", name, ".pdf"), width = 12, height = 12)
+  p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group")
+  pdf(paste0("FeaturePlot_", name, ".pdf"), width = 12, height = ifelse(length(genes)<4, 10,
+                                                                        ifelse(4<=length(genes)&length(genes)<=5, 13,
+                                                                               ifelse(6<=length(genes)&length(genes)<=8, 18, 23))))
   print(p2)
   dev.off()
   
@@ -99,6 +109,15 @@ mySeuratPlot = function(genes){
   print(p6)
   dev.off() 
 }
+
+myFeaturePlot = function(genes){
+  p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group")
+  pdf(paste0("FeaturePlot_", name, ".pdf"), width = 12, height = 12)
+  print(p2)
+  dev.off()
+  
+}
+
 
 TCR_components = genes_of_interest[which(genes_of_interest$type=="TCR_components"), c("gene")]
 CoReceptors_CoSignalingMolecules = genes_of_interest[which(genes_of_interest$type=="CoReceptors_CoSignalingMolecules"), c("gene")]
@@ -138,5 +157,15 @@ DimPlot(so, reduction = "tsne", group.by = "hash.ID")
 DimPlot(so, reduction = "umap", group.by = "hash.ID")
 
 
+```
+
+```{r}
+
+VlnPlot(so, features = c("Ccr7","Cd69","Cd4"), pt.size = 0.001)+NoLegend()
+```
+
+```{r}
+DefaultAssay(so) = "RNA"
+VlnPlot(so, features = c("Ccr7","Cd69","Cd4"), pt.size = 0.001)+NoLegend()
 ```
 
