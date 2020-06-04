@@ -70,9 +70,10 @@ mySeuratPlot = function(genes){
   dev.off()
   
   p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group")
-  pdf(paste0("FeaturePlot_", name, ".pdf"), width = 12, height = ifelse(length(genes)<4, 10,
+  pdf(paste0("FeaturePlot_", name, ".pdf"), width = 12, height = ifelse(2<length(genes)&length(genes)<=3, 10,
                                                                         ifelse(4<=length(genes)&length(genes)<=5, 13,
-                                                                               ifelse(6<=length(genes)&length(genes)<=8, 18, 23))))
+                                                                               ifelse(6<=length(genes)&length(genes)<=8, 20, 
+                                                                                      ifelse(length(genes)==2, 6, 26)))))
   print(p2)
   dev.off()
   
@@ -109,14 +110,26 @@ mySeuratPlot = function(genes){
   print(p6)
   dev.off() 
 }
+library(RColorBrewer)
 
-myFeaturePlot = function(genes){
-  p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group")
-  pdf(paste0("FeaturePlot_", name, ".pdf"), width = 12, height = 12)
+myFeaturePlot = function(genes, w, h){
+  name = deparse(substitute(genes))
+  p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group",cols = c("lightgrey","orangered","red"))
+  pdf(paste0("FeaturePlot_", name, ".pdf"), width = w, height = h)
   print(p2)
   dev.off()
-  
 }
+
+myFeaturePlot(genes = TCR_components, 12,15)
+
+myFeaturePlot(genes = CoReceptors_CoSignalingMolecules,12,20)
+
+myFeaturePlot(genes = cytokineReceptors_chemokineReceptors,12,18)
+myFeaturePlot(genes = adhesionMolecules_guidanceMolecules,12,23)
+myFeaturePlot(genes = otherSurfaceMolecules,10,6)
+myFeaturePlot(genes = signalMolecules,12,31)
+myFeaturePlot(genes = transcriptionFactors,12,33)
+myFeaturePlot(genes = otherMolecules,12,30)
 
 
 TCR_components = genes_of_interest[which(genes_of_interest$type=="TCR_components"), c("gene")]
@@ -160,9 +173,68 @@ DimPlot(so, reduction = "umap", group.by = "hash.ID")
 ```
 
 ```{r}
+a <- DotPlot(object = so, features = c("Cxcr4"))
+a$data
 
-VlnPlot(so, features = c("Ccr7","Cd69","Cd4"), pt.size = 0.001)+NoLegend()
+
+
+so@assays$RNA@data[c("Cxcr4"),] %>% plot()
+
+so@assays$RNA@counts[c("Plxnd1"),] %>% plot()
+
+expr.pct = function(geneName){
+  df = so@assays$RNA@counts[c(geneName),] %>% table() %>% data.frame() 
+  df$fraction = df$Freq/sum(df$Freq)
+  colnames(df)[1] = "Count"
+  df$gene = geneName
+  return(df)
+}
+
+Bcl2 = expr.pct("Bcl2")
+Plxnd1 = expr.pct("Plxnd1")
+Cxcr4 = expr.pct("Cxcr4")
+S1pr1 = expr.pct("S1pr1")
+Ccr7 = expr.pct("Ccr7")
+Ccr9 = expr.pct("Ccr9")
+Itgb2 = expr.pct("Itgb2")
+Itgb7 = expr.pct("Itgb7")
+
+countFraction = 
+ggplot(data = df_all, aes(x = gene, y = fraction, fill=Count)) + geom_bar(stat = "identity", position = "stack", colour="black")
+
+ggsave(filename = "countFraction.pdf",plot = countFraction)
+
+
+
+  
+
 ```
+
+
+```{r}
+DimPlot.hashID_ko_het = 
+DimPlot(so, reduction = "tsne", split.by = "group")
+
+ggsave(filename = "DimPlot.hashID_ko_het.pdf",DimPlot.hashID_ko_het)
+
+```
+
+```{r}
+so_ko = subset(so, cells=which(so$group=="ko"))
+so_het = subset(so, cells=which(so$group=="het"))
+
+DimPlot.hashID_ko = 
+DimPlot(so_ko, reduction = "tsne")
+DimPlot.hashID_het = 
+DimPlot(so_het, reduction = "tsne")
+
+ggsave(filename = "DimPlot.hashID_ko.pdf",DimPlot.hashID_ko)
+ggsave(filename = "DimPlot.hashID_het.pdf",DimPlot.hashID_het)
+
+
+
+```
+
 
 ```{r}
 DefaultAssay(so) = "RNA"
