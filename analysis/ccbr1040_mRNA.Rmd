@@ -114,7 +114,7 @@ library(RColorBrewer)
 
 myFeaturePlot = function(genes, w, h){
   name = deparse(substitute(genes))
-  p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group",cols = c("lightgrey","orangered","red"))
+  p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group",cols = c("lightgrey","orangered","red"), order = TRUE)
   pdf(paste0("FeaturePlot_", name, ".pdf"), width = w, height = h)
   print(p2)
   dev.off()
@@ -199,8 +199,12 @@ Ccr9 = expr.pct("Ccr9")
 Itgb2 = expr.pct("Itgb2")
 Itgb7 = expr.pct("Itgb7")
 
+
+df_all = rbind(Bcl2,Plxnd1,Cxcr4,S1pr1,Ccr7,Ccr9,Itgb2,Itgb7)
+df_all$Count = as.factor(df_all$Count)
+
 countFraction = 
-ggplot(data = df_all, aes(x = gene, y = fraction, fill=Count)) + geom_bar(stat = "identity", position = "stack", colour="black")
+ggplot(data = df_all, aes(x = gene, y = fraction, fill=Count)) + geom_bar(stat = "identity", position = "stack", colour="black")+ theme(legend.position = "none")
 
 ggsave(filename = "countFraction.pdf",plot = countFraction)
 
@@ -209,6 +213,8 @@ ggsave(filename = "countFraction.pdf",plot = countFraction)
   
 
 ```
+
+
 
 
 ```{r}
