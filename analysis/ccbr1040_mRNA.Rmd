@@ -43,7 +43,7 @@ so@meta.data$group = ifelse(so@meta.data$sample_name=="1MF1", "het",
                                ifelse(so@meta.data$sample_name=="3MF1", "het",
                                       ifelse(so@meta.data$sample_name=="1MF2", "ko", "ko")))
 
-
+so@meta.data$batch %>% table()
 
 ```
 
@@ -114,7 +114,7 @@ library(RColorBrewer)
 
 myFeaturePlot = function(genes, w, h){
   name = deparse(substitute(genes))
-  p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group",cols = c("lightgrey","orangered","red"), order = TRUE)
+  p2 = FeaturePlot(so, features = genes, reduction = "tsne", split.by = "group",cols = c("lightgrey","red"), order = TRUE)
   pdf(paste0("FeaturePlot_", name, ".pdf"), width = w, height = h)
   print(p2)
   dev.off()
@@ -198,6 +198,7 @@ Ccr7 = expr.pct("Ccr7")
 Ccr9 = expr.pct("Ccr9")
 Itgb2 = expr.pct("Itgb2")
 Itgb7 = expr.pct("Itgb7")
+Itgb4 = expr.pct("Itgb4")
 
 
 df_all = rbind(Bcl2,Plxnd1,Cxcr4,S1pr1,Ccr7,Ccr9,Itgb2,Itgb7)
@@ -224,7 +225,7 @@ DimPlot(so, reduction = "tsne", split.by = "group")
 ggsave(filename = "DimPlot.hashID_ko_het.pdf",DimPlot.hashID_ko_het)
 
 ```
-
+####  a large difference in the expression of Zbtb7b (ThPok) and Itgb4 (integrin B4) between the KO and HET conditions, which is very intriguing
 ```{r}
 so_ko = subset(so, cells=which(so$group=="ko"))
 so_het = subset(so, cells=which(so$group=="het"))
@@ -237,8 +238,20 @@ DimPlot(so_het, reduction = "tsne")
 ggsave(filename = "DimPlot.hashID_ko.pdf",DimPlot.hashID_ko)
 ggsave(filename = "DimPlot.hashID_het.pdf",DimPlot.hashID_het)
 
+Idents(so) = "sample_name"
+markers_ko_het_sampleName = FindMarkers(object = so, ident.1="1MF2",ident.2="1MF1", 
+            logfc.threshold = 0.05, min.pct = 0.05)
 
 
+Idents(so) = "group"
+markers_ko_het_group = FindMarkers(object = so, ident.1="ko",ident.2="het", 
+            logfc.threshold = 0.02, min.pct = 0.02)
+
+write.csv(markers_ko_het_group, "markers_ko_het_group.csv", quote = F)
+
+library(DT)
+datatable(markers_ko_het)
+so@meta.data$sample_name %>% table()
 ```
 
 
